@@ -1,5 +1,5 @@
 ARG VARIANT="ubuntu20.04" 
-ARG CUDA_VERSION="11.0.3"
+ARG CUDA_VERSION="12.0.0"
 FROM nvidia/cuda:${CUDA_VERSION}-devel-${VARIANT}
 
 # Copy environment.yml (if found) to a temp location so we update the environment. Also
