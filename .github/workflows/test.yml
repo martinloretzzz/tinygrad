@@ -81,6 +81,29 @@ jobs:
     - name: Run Pytest OPT=2
       run: OPT=2 LLVM=1 python -m pytest -s -v
 
+  testtriton:
+    name: Triton Tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v2
+    - name: cuda-toolkit
+      uses: Jimver/cuda-toolkit@v0.2.8
+    - run: echo "Installed cuda version is: ${{steps.cuda-toolkit.outputs.cuda}}"
+    - run: echo "Cuda install location: ${{steps.cuda-toolkit.outputs.CUDA_PATH}}"
+    - run: nvcc -V
+    - name: Update packages
+      run: sudo apt-get update
+    - name: Set up Python 3.8
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3.8
+    - name: Install Dependencies
+      run: pip install -e '.[triton,testing]'
+    - name: Run Pytest OPT=2
+      run: OPT=2 TRITON=1 python -m pytest -s -v
+
   testtorch:
     name: Torch Tests
     runs-on: ubuntu-latest
