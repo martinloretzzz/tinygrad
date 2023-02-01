@@ -90,9 +90,8 @@ jobs:
       uses: actions/checkout@v2
     - name: cuda-toolkit
       uses: Jimver/cuda-toolkit@v0.2.8
-    - run: echo "Installed cuda version is: ${{steps.cuda-toolkit.outputs.cuda}}"
-    - run: echo "Cuda install location: ${{steps.cuda-toolkit.outputs.CUDA_PATH}}"
-    - run: nvcc -V
+    - name: Test cuda installed
+      run: nvcc -V
     - name: Update packages
       run: sudo apt-get update
     - name: Set up Python 3.8
