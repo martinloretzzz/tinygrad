@@ -92,8 +92,6 @@ jobs:
       uses: Jimver/cuda-toolkit@v0.2.8
     - name: Test cuda installed
       run: nvcc -V
-    - name: Test nvidia-smi
-      run: nvidia-smi
     - name: Update packages
       run: sudo apt-get update
     - name: Set up Python 3.8
