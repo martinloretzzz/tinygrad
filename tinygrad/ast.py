@@ -11,6 +11,7 @@ def get_first_reduce(shapes):
       return i
   return len(shapes[0])  # off the end
 
+
 # this will be removed soon anyway
 class Types(Enum): FLOAT = auto(); FLOAT4 = auto() # noqa: E702
 class Token:
