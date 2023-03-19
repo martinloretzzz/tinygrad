@@ -4,9 +4,10 @@ from llvmlite import ir  # type: ignore
 from tinygrad.codegen.ast import ASTKernel
 from tinygrad.ops import UnaryOps, BinaryOps, ReduceOps, LazyOp, ASTRunner
 from tinygrad.helpers import DEBUG, prod, dtypes
-
 from tinygrad.shape.symbolic import Variable, NumNode, MulNode, DivNode, ModNode, GeNode, LtNode, SumNode, AndNode
+
 def int_const(x): return ir.Constant(ir.IntType(64), x)
+
 render_llvm = {
   Variable: lambda self,ops,ctx: self.expr,
   NumNode: lambda self,ops,ctx: int_const(self.b),
@@ -32,7 +33,9 @@ class LLVMCodegen(ASTKernel):
     BinaryOps.DIV: lambda builder,x,y: builder.fdiv(x,y, flags=('fast',)),
     BinaryOps.POW: lambda builder,x,y: builder.call(builder._block.module.declare_intrinsic('llvm.pow', [ir.FloatType()]), [x,y], fastmath=('fast',)),
     BinaryOps.CMPEQ: lambda builder,x,y: builder.uitofp(builder.fcmp_ordered("==", x, y, flags=('fast',)), ir.FloatType()),
-    BinaryOps.MAX: lambda builder,x,y: builder.select(builder.fcmp_unordered(">", x, y, flags=('fast',)), x, y, flags=('fast',))
+    BinaryOps.MAX: lambda builder,x,y: builder.select(builder.fcmp_unordered(">", x, y, flags=('fast',)), x, y, flags=('fast',)),
+    ReduceOps.SUM: lambda builder,x,y: builder.fadd(x, y, flags=('fast',)),
+    ReduceOps.MAX: lambda builder,x,y: builder.select(builder.fcmp_unordered(">", y, x, flags=('fast',)), y, x, flags=('fast',))
   }
   start_for_op: ClassVar = {
     ReduceOps.SUM: ir.Constant(ir.FloatType(), 0),
@@ -42,11 +45,6 @@ class LLVMCodegen(ASTKernel):
   def codegen(self):
     self.process()
     if DEBUG >= 3: self.printbufs("old:", DEBUG>=4)
-
-    # the 4x4 need to go all the way at the end, even after reduce
-    output_shape = self.sts[0].shape
-    full_shape_options = [x.shape for x in self.sts if x.shape != output_shape]
-    full_shape = output_shape if len(full_shape_options) == 0 else full_shape_options[0]
 
     # create llvm function
     module = ir.Module(name=__file__)
@@ -58,89 +56,76 @@ class LLVMCodegen(ASTKernel):
     func.attributes.add('"no-nans-fp-math"="true"')
 
     # construct the structure of the loops
-    loop_entry, loop_exit = [ir.IRBuilder(func.append_basic_block(name="entry"))], []
-    for i,_ in enumerate(full_shape): loop_entry.append(ir.IRBuilder(func.append_basic_block(name=f"loop_{i}")))
-    for i,_ in enumerate(full_shape): loop_exit.append(ir.IRBuilder(func.append_basic_block(name=f"loopexit_{len(full_shape)-1-i}")))
-    loop_exit.append(ir.IRBuilder(func.append_basic_block(name="exit")))
-    loop_exit = loop_exit[::-1]
+    loop_entry = [ir.IRBuilder(func.append_basic_block(name)) for name in (["entry"] + [f"loop_{i}" for i in range(len(self.full_shape))])]
+    loop_exit = [ir.IRBuilder(func.append_basic_block(name)) for name in ([f"loopexit_{len(self.full_shape)-i-1}" for i in range(len(self.full_shape))] + ["exit"])][::-1]
 
-    # add the buffer indexing
-    idx_level = [[int_const(st.offset)] for st in self.sts]
-    for i in range(len(full_shape)):
-      for j in range(len(self.bufs)):
-        # stride
-        si = loop_entry[i+1].phi(ir.IntType(64), name=f"idx_{j}_{i}")
-        si.add_incoming(idx_level[j][-1], loop_entry[i]._block)
-        si_ps = loop_exit[i+1].add(si, int_const(self.sts[j].views[-1].strides[i]))
-        si.add_incoming(si_ps, loop_exit[i+1]._block)
-        idx_level[j].append(si)
+    store_loop = self.sts[0].shape.index(1) if 1 in self.sts[0].shape else -1
 
-    # the ast parser
-    def ast_parse(builder, x, level, reduce_result=None):
-      if not isinstance(x, LazyOp):
-        buf_index = self.bufs.index(x)
-        # first view is already implictly handled
-        idx, valid = self.sts[buf_index]._expr_idx(Variable(idx_level[buf_index][level], 0, prod(self.sts[buf_index].shape)))
-        idx = idx.render(render_llvm, builder)
-        if valid.min == 0:
-          valid = valid.render(render_llvm, builder)
-          # this always does the load, so we have it load *0 if the arg won't be used
-          # TODO: would control flow be faster?
-          aug_idx = builder.select(valid, idx, int_const(0))
-          element = builder.select(valid, builder.load(builder.gep(func.args[buf_index], [aug_idx], inbounds=True)), ir.Constant(func_dtypes[buf_index], 0))
-        else:
-          element = builder.load(builder.gep(func.args[buf_index], [idx], inbounds=True))
-        # upcast
-        if func_dtypes[buf_index] != ir.FloatType(): element = builder.fpext(element, ir.FloatType())
-        return element
-      if isinstance(x.op, ReduceOps):
-        if reduce_result is None: raise RuntimeError("no reduce")
-        return reduce_result
-      values = [ast_parse(builder, v, level, reduce_result) for v in x.src]
-      return LLVMCodegen.op_lookup[x.op](builder, *values)
-
-    # add the ast + final store
-    store_loop = output_shape.index(1) if 1 in output_shape else -1
-
-    # do the early ast
-    reduce_result = None
     if self.reduceop:
-      reduce_input = ast_parse(loop_exit[-1], self.reduceop.src[0], -1)
       phis = [LLVMCodegen.start_for_op[self.reduceop.op]]  # type: ignore
       for i in range(store_loop+1, len(loop_entry)):
         val = loop_entry[i].phi(ir.FloatType(), f"reduce_phi_{i}")
         val.add_incoming(phis[-1], loop_entry[i-1]._block)
         phis.append(val)
 
-      if self.reduceop.op == ReduceOps.SUM:
-        reduce_result = loop_exit[-1].fadd(reduce_input, val, flags=('fast',))
-      elif self.reduceop.op == ReduceOps.MAX:
-        reduce_result = loop_exit[-1].select(loop_exit[-1].fcmp_unordered(">", val, reduce_input, flags=('fast',)), val, reduce_input, flags=('fast',))
+    # add the looping
+    loop_vars = []
+    loop_ex = []    # TODO remove this
+    for i,s in enumerate(self.full_shape):
+      loop_entry[i].branch(loop_entry[i+1]._block)
+      idx = loop_entry[i+1].phi(ir.IntType(64), name=f"loopvar_{i}")
+      loop_vars.append(idx)
+      idx.add_incoming(int_const(0), loop_entry[i]._block)
+      idx_p1 = loop_exit[i+1].add(idx, int_const(1))
+      idx.add_incoming(idx_p1, loop_exit[i+1]._block)
+      loop_ex.append(idx_p1)
+
+    # the ast parser
+    def ast_parse(builder, x, reduce_result=None):
+      if not isinstance(x, LazyOp):
+        buf_index = self.bufs.index(x)
+        idx, valid = self.sts[buf_index].expr_idxs(0, [loop_vars[i] for i in range(len(self.sts[buf_index].shape))])
+        if valid.min == 0:
+          valid = valid.render(render_llvm, builder)
+          # this always does the load, so we have it load *0 if the arg won't be used
+          # TODO: would control flow be faster?
+          aug_idx = builder.select(valid, idx.render(render_llvm, builder), int_const(0))
+          element = builder.select(valid, builder.load(builder.gep(func.args[buf_index], [aug_idx], inbounds=True)), ir.Constant(func_dtypes[buf_index], 0))
+        else:
+          element = builder.load(builder.gep(func.args[buf_index], [idx.render(render_llvm, builder)], inbounds=True))
+        # upcast
+        if func_dtypes[buf_index] != ir.FloatType(): element = builder.fpext(element, ir.FloatType())
+        return element
+      if isinstance(x.op, ReduceOps):
+        if reduce_result is None: raise RuntimeError("no reduce")
+        return reduce_result
+      return LLVMCodegen.op_lookup[x.op](builder, *[ast_parse(builder, v, reduce_result) for v in x.src])
+
+    # do the early ast
+    reduce_result = None
+    if self.reduceop:
+      reduce_input = ast_parse(loop_exit[-1], self.reduceop.src[0])
+      # TODO why is val right?
+      reduce_result = LLVMCodegen.op_lookup[self.reduceop.op](loop_exit[-1], reduce_input, val)
 
       for i,phi in enumerate(phis[1:]):
         phi.add_incoming(reduce_result, loop_exit[store_loop+1+i]._block)
 
     # do the late ast
-    result = ast_parse(loop_exit[store_loop], self.ast, store_loop, reduce_result=reduce_result)
+    builder = loop_exit[store_loop]
+    result = ast_parse(builder, self.ast, reduce_result)
+    if func_dtypes[0] != ir.FloatType(): result = builder.fptrunc(result, func_dtypes[0])
 
     # store result
-    builder = loop_exit[store_loop]
-    idx = idx_level[0][store_loop]
-    if func_dtypes[0] != ir.FloatType(): result = builder.fptrunc(result, func_dtypes[0])
-    builder.store(result, builder.gep(func.args[0], [idx], inbounds=True))
+    idx, _ = self.sts[0].expr_idxs(0, [loop_vars[i] for i in range(len(self.sts[0].shape))])
+    builder.store(result, builder.gep(func.args[0], [idx.render(render_llvm, builder)], inbounds=True))
 
-    # add the looping
-    for i,s in enumerate(full_shape):
-      loop_entry[i].branch(loop_entry[i+1]._block)
-      idx = loop_entry[i+1].phi(ir.IntType(64), name=f"loopvar_{i}")
-      idx.add_incoming(int_const(0), loop_entry[i]._block)
-      idx_p1 = loop_exit[i+1].add(idx, int_const(1))
-      idx.add_incoming(idx_p1, loop_exit[i+1]._block)
-      loop_exit[i+1].cbranch(loop_exit[i+1].icmp_unsigned("==", idx_p1, int_const(s)), loop_exit[i]._block, loop_entry[i+1]._block)
+    for i,s in enumerate(self.full_shape):
+      loop_exit[i+1].cbranch(loop_exit[i+1].icmp_unsigned("==", loop_ex[i], int_const(s)), loop_exit[i]._block, loop_entry[i+1]._block)
 
     loop_entry[-1].branch(loop_exit[-1]._block)
     loop_exit[0].ret_void()
 
     # TODO: mem_estimate is copied from GPU
-    return ASTRunner('exec', str(module), op_estimate=self.info.flops,
-                     mem_estimate=sum(x.dtype.itemsize*(x.realized.size if x.realized is not None else prod(x.shape)) for x in self.bufs if x is not None))
+    mem_estimate = sum(x.dtype.itemsize*(x.realized.size if x.realized is not None else prod(x.shape)) for x in self.bufs if x is not None)
+    return ASTRunner('exec', str(module), op_estimate=self.info.flops, mem_estimate=mem_estimate)
