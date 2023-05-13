@@ -1,0 +1,9 @@
+{
+	"name": "webgpu-runtime",
+	"version": "0.0.0",
+	"main": "webgpu-runtime.js",
+	"private": true,
+	"dependencies": {
+		"@axinging/webgpu": "^0.0.7"
+	}
+}
