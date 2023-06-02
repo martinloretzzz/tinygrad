@@ -10,16 +10,18 @@ from tinygrad.runtime.lib import RawMallocBuffer
 class WEBGPUProgram:
   def __init__(self, name:str, prg:str, binary=False):
     self.code = prg
-    print(prg)
+    # print(prg)
 
   def __call__(self, global_size, unused_local_size, *bufs, wait=False):
     if wait: st = time.monotonic()
+
+    self.global_size = global_size
 
     p = subprocess.Popen(['node', './extra/webgpu-runtime/webgpu-runtime.js'], stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
 
     data_str = json.dumps({'code':self.code, 'out_size': bufs[0].size, 'workgroup_size': global_size[::-1] if len(global_size) > 0 else [1],'bufs': [buf.toCPU().flatten().tolist() for buf in bufs[1:]]})
     out = p.communicate(input=(data_str + os.linesep).encode())[0]
-    print(out[0:2000])
+    # print(out[0:2000])
     z = np.array(json.loads(out.decode()), dtype=np.float32)
     np.copyto(bufs[0].toCPU(), z)
 

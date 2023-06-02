@@ -4,6 +4,7 @@
 	"main": "webgpu-runtime.js",
 	"private": true,
 	"dependencies": {
-		"@axinging/webgpu": "^0.0.7"
+		"@axinging/webgpu": "^0.0.7",
+		"sharp": "^0.32.1"
 	}
 }

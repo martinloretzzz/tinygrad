@@ -103,4 +103,4 @@ class WebGPUCodegen(Linearizer):
       suffix = f"{'n'+str(WebGPUCodegen.kernel_cnt[self.function_name]-1)}" if WebGPUCodegen.kernel_cnt[self.function_name] > 1 else ""
       WebGPUCodegen.kernel_name_cache[prg] = function_name, display_name = self.function_name+suffix, self.display_name+colored(suffix, 'black', bright=True)
 
-    return ASTRunner(function_name, prg.replace("KERNEL_NAME_PLACEHOLDER", function_name), global_size=global_size, op_estimate=self.info.flops, mem_estimate=self.mem_estimate, display_name=self.display_name)
+    return ASTRunner(function_name, prg.replace("KERNEL_NAME_PLACEHOLDER", "main"), global_size=global_size, op_estimate=self.info.flops, mem_estimate=self.mem_estimate, display_name=self.display_name)
