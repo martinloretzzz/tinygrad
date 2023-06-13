@@ -1,5 +1,6 @@
 import collections
 import math
+from math import ceil, log2, pow, log, prod
 from typing import DefaultDict, Dict, Final, List, Tuple
 from tinygrad.codegen.linearizer import Linearizer, UOps, UOp, Token
 from tinygrad.helpers import colored
@@ -40,6 +41,8 @@ def uops_to_webgpu_ir(uops:List[UOp], bufs:List[LazyBuffer]) -> str:
             else:
               kk(f"{{ var {var.expr}:i32 = {root} % {var.max+1}; {root} /= {var.max+1};")
               global_size[-1] *= var.max+1
+            if i == len(args[0]) - 2 - 1:
+              kk(f"if(i32({gid[-1]}) >= {global_size[-1]}) {{ return; }} /* {global_size[-1]} */")
           else:
             kk(f"{{ var {var.expr}:i32 = i32({gid[len(args[0])-1-i]}); if({var.expr} >= {var.max+1}) {{ return; }} /* {var.max+1} */")
             global_size.append(var.max+1)
@@ -76,13 +79,29 @@ def uops_to_webgpu_ir(uops:List[UOp], bufs:List[LazyBuffer]) -> str:
       bindIndex += 1
       bindings.append(f'@group(0) @binding({bindIndex}) var<storage, read> data{i} : array<f32>;')
 
+
+  workgroup_grid, workgroup_size = optimize_workgroup_size(global_size[::-1])
   return f"""
 {join_newline(bindings)}
 
-@compute @workgroup_size(64, 1, 1)
+@compute @workgroup_size({', '.join(map(str, workgroup_size))})
 fn KERNEL_NAME_PLACEHOLDER(@builtin(global_invocation_id) global_id : vec3<u32>) {{
 {join_newline(kernel)}
-}}""", global_size
+}}""", workgroup_grid
+
+# TODO: find a better solution
+def optimize_workgroup_size(global_size):
+  log_org_size = [ceil(log2(x)) for x in global_size]
+  log_goup_size = log_org_size.copy()
+  i = 0
+  while prod([int(pow(2, x)) for x in log_goup_size]) > 256: 
+    log_goup_size = [max(ceil(x-1), log_org-16, 1) for x, log_org in zip(log_goup_size, log_org_size)]
+    i += 1
+    if i > 100: raise Exception("No solution found")
+
+  workgroup_size = [int(pow(2, log_goup_size[i])) if len(global_size) > i else 1 for i in range(3)]
+  workgroup_grid = [ceil(global_size[i] / workgroup_size[i]) if len(global_size) > i else 1 for i in range(3)] 
+  return workgroup_grid, workgroup_size
 
 class WebGPUCodegen(Linearizer):
   supports_constant_folding: bool = True
