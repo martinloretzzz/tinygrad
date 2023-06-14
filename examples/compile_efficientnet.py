@@ -3,7 +3,7 @@ from tinygrad.tensor import Tensor
 from extra.utils import fetch
 import ast
 
-def compile_net(run, special_names):
+def compile_net(run, special_names, statement_builder = lambda name, cargs, global_size: f"{name}({', '.join(cargs)});"):
   # functions that run the net
   functions = {}
   bufs = {}
@@ -23,7 +23,7 @@ def compile_net(run, special_names):
           bufnum += 1
           if i > 0: bufs_to_save[bufs[key][0]] = arg   # if first usage of a buffer is not an output, and it's not a special name
       cargs.append(bufs[key][0])
-    statements.append(f"{fxn.name}({', '.join(cargs)});")
+    statements.append(statement_builder(fxn.name, cargs, fxn.global_size))
 
   return functions, statements, bufs, bufs_to_save
 

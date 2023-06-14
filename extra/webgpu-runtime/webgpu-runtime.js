@@ -1,9 +1,9 @@
 let readline = require("readline");
 const nodeGPU = require("@axinging/webgpu");
 
-const runKernel = async (device, code, bufs, outBufSize, workgroupSize) => {
+const runKernel = async (device, code, bufs, outBufSize, workgroupGrid) => {
 	const destBuf = device.createBuffer({
-		size: outBufSize * Float32Array.BYTES_PER_ELEMENT,
+		size: outBufSize,
 		usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
 	});
 
@@ -15,14 +15,15 @@ const runKernel = async (device, code, bufs, outBufSize, workgroupSize) => {
 		gpuBufs.push(gpuBuf);
 	}
 
-	const shaderModule = device.createShaderModule({ code });
+	// TODO why is this copy needed?
+	const gpuReadBuffer = device.createBuffer({
+		size: outBufSize,
+		usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+	});
 
 	const computePipeline = device.createComputePipeline({
 		layout: "auto",
-		compute: {
-			module: shaderModule,
-			entryPoint: "main",
-		},
+		compute: { module: device.createShaderModule({ code }), entryPoint: "main" },
 	});
 
 	const bindGroup = device.createBindGroup({
@@ -35,24 +36,12 @@ const runKernel = async (device, code, bufs, outBufSize, workgroupSize) => {
 	const passEncoder = commandEncoder.beginComputePass();
 	passEncoder.setPipeline(computePipeline);
 	passEncoder.setBindGroup(0, bindGroup);
-
-	const workgroupX = Math.ceil(workgroupSize[0] / 64);
-	const workgroupY = workgroupSize.length > 1 ? Math.ceil(workgroupSize[1] / 1) : 1;
-	const workgroupZ = workgroupSize.length > 2 ? Math.ceil(workgroupSize[2] / 1) : 1;
-	passEncoder.dispatchWorkgroups(workgroupX, workgroupY, workgroupZ);
+	passEncoder.dispatchWorkgroups(...workgroupGrid);
 	passEncoder.end();
 
-	// TODO why is this copy needed?
-	// Get a GPU buffer for reading in an unmapped state.
-	const gpuReadBuffer = device.createBuffer({
-		size: outBufSize * Float32Array.BYTES_PER_ELEMENT,
-		usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-	});
+	commandEncoder.copyBufferToBuffer(destBuf, 0, gpuReadBuffer, 0, outBufSize);
 
-	commandEncoder.copyBufferToBuffer(destBuf, 0, gpuReadBuffer, 0, outBufSize * Float32Array.BYTES_PER_ELEMENT);
-
-	const gpuCommands = commandEncoder.finish();
-	device.queue.submit([gpuCommands]);
+	device.queue.submit([commandEncoder.finish()]);
 
 	await gpuReadBuffer.mapAsync(GPUMapMode.READ);
 	return new Float32Array(gpuReadBuffer.getMappedRange());
@@ -64,18 +53,16 @@ const getDevice = async () => {
 	return adapter.requestDevice();
 };
 
-let rl = readline.createInterface({ input: process.stdin });
-
 async function readLine(line) {
 	try {
-		const data = JSON.parse(line);
+		const data = JSON.parse(line.replace(/\bNaN\b/g, "null"));
 		const device = await getDevice();
 		const buf = await runKernel(
 			device,
 			data.code,
-			data.bufs.map((arr) => new Float32Array(arr)),
-			data.out_size,
-			data.workgroup_size
+			data.bufs.map((arr) => new Float32Array(arr.map((v) => (v === null ? NaN : v)))),
+			data.out_size * Float32Array.BYTES_PER_ELEMENT,
+			data.workgroup_grid
 		);
 
 		console.log(JSON.stringify(Array.from(buf)));
@@ -84,4 +71,5 @@ async function readLine(line) {
 	}
 }
 
+let rl = readline.createInterface({ input: process.stdin });
 rl.on("line", readLine);
