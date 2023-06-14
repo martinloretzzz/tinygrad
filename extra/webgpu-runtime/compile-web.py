@@ -109,23 +109,15 @@ const sharp = require("sharp");
 
 const main = async () => {{
 	const device = await getDevice();
-
-	const image = await sharp("cat.jpg").resize({{ width: 224, height: 224 }}).raw().toBuffer();
-	console.log("image");
-    console.log(image)
-	const pix = Array.from(Uint8Array.from(image)).map((pix) => (pix / 255.0 - 0.45) / 0.225);
-    const arrx = [];
-	let i = 0;
-	for (let c = 0; c < 3; c++) {{
-		for (let y = 0; y < 224; y++) {{
-			for (let x = 0; x < 224; x++) {{
-				arrx[i] = pix[c * 224 * 224 + x * 224 + y];
-				i++;
-			}}
+    
+	const image = await sharp("hen2.jpg").resize({{ width: 224, height: 224 }}).raw().toBuffer();
+	const pix = Array.from(Uint8Array.from(image)).map((pix) => ((pix / 255.0) * 0.45) - 0.225);
+    const inputData = [];
+    for (let c = 0; c < 3; c++) {{
+		for (let x = 0; x < 224 * 224; x++) {{
+			inputData[c * 224 * 224 + x] = pix[x * 3 + c];
 		}}
 	}}
-    const inputData = arrx;
-	console.log(inputData);
 
 	const out = await net(device, inputData);
 
@@ -144,8 +136,6 @@ const main = async () => {{
 	for (const index of indices.slice(0, 10)) {{
     	console.log(labels[index]);
 	}}
-    
-
 }};
 
 main();

@@ -1,6 +1,10 @@
+import ast
 import json
+from PIL import Image
 from examples.compile_efficientnet import compile_net
+from extra.utils import fetch
 from models.efficientnet import EfficientNet
+import numpy as np
 from tinygrad.tensor import Tensor
 from tinygrad.jit import TinyJit
 
@@ -30,7 +34,7 @@ if __name__ == "__main__":
   special_names = {id(the_input.lazydata.realized): "input", id(the_output.lazydata.realized): "outputs"}
 
   functions, statements, bufs, bufs_to_save = compile_net(run, special_names, lambda name, cargs, global_size: {'kernel': name, 'args': cargs, 'global_size': global_size})
-  print(functions)
+  #print(functions)
   #print(statements)
   #print(bufs)
   #print(bufs_to_save)
