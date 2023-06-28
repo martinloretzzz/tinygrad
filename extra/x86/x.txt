@@ -1,0 +1,199 @@
+.section .text
+.globl _kernel
+_kernel:
+pushq   %rbp
+movq    %rsp, %rbp
+subq    $118, %rsp
+# AssemblyInstruction(op=<UOps.DEFINE_REGISTER: 10>, out=None, vin=[], arg=(dtypes.uint64, 'A', 6))
+# AssemblyInstruction(op=<UOps.DEFINE_REGISTER: 10>, out=None, vin=[], arg=(dtypes.int, 'i', 14))
+# AssemblyInstruction(op=<UOps.DEFINE_REGISTER: 10>, out=None, vin=[], arg=(dtypes.float, 'f', 1))
+# AssemblyInstruction(op=<UOps.DEFINE_REGISTER: 10>, out=None, vin=[], arg=(dtypes.bool, 'p', 10))
+# AssemblyInstruction(op=<UOps.SPECIAL: 9>, out=%A0, vin=[], arg='buf0')
+movq %rdi, -8(%rbp)
+# AssemblyInstruction(op=<UOps.SPECIAL: 9>, out=%A1, vin=[], arg='buf1')
+movq %rsi, -16(%rbp)
+# AssemblyInstruction(op=<UOps.CONST: 5>, out=%i0, vin=[], arg=0)
+movl $0x0, -52(%rbp)
+# AssemblyInstruction(op=<UOps.LABEL: 11>, out=None, vin=[], arg='$loop_gidx0')
+.loop_gidx0:
+# AssemblyInstruction(op=<UOps.CONST: 5>, out=%i1, vin=[], arg=0)
+movl $0x0, -56(%rbp)
+# AssemblyInstruction(op=<UOps.LABEL: 11>, out=None, vin=[], arg='$loop_gidx1')
+.loop_gidx1:
+# AssemblyInstruction(op=<UOps.CONST: 5>, out=%i2, vin=[], arg=0)
+movl $0x0, -60(%rbp)
+# AssemblyInstruction(op=<UOps.LABEL: 11>, out=None, vin=[], arg='$loop_gidx2')
+.loop_gidx2:
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%i3, vin=[%i1, 12], arg=<BinaryOps.MUL: 3>)
+movl -56(%rbp), %eax
+movl $12, %ebx
+mull %ebx
+movl %eax, -64(%rbp)
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%i4, vin=[%i0, 36], arg=<BinaryOps.MUL: 3>)
+movl -52(%rbp), %eax
+movl $36, %ebx
+mull %ebx
+movl %eax, -68(%rbp)
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%i5, vin=[%i3, %i4], arg=<BinaryOps.ADD: 1>)
+movl -64(%rbp), %eax
+movl -68(%rbp), %ebx
+addl %ebx, %eax
+movl %eax, -72(%rbp)
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%i6, vin=[%i2, 4], arg=<BinaryOps.MUL: 3>)
+movl -60(%rbp), %eax
+movl $4, %ebx
+mull %ebx
+movl %eax, -76(%rbp)
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%i7, vin=[%i5, %i6], arg=<BinaryOps.ADD: 1>)
+movl -72(%rbp), %eax
+movl -76(%rbp), %ebx
+addl %ebx, %eax
+movl %eax, -80(%rbp)
+# AssemblyInstruction(op=<UOps.CAST: 8>, out=%A2, vin=[%i7], arg=None)
+movslq -80(%rbp), %rax
+movq %rax, -24(%rbp)
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%A3, vin=[%A2, %A1], arg=<BinaryOps.ADD: 1>)
+movq -24(%rbp), %rax
+movq -16(%rbp), %rbx
+addq %rbx, %rax
+movq %rax, -32(%rbp)
+# AssemblyInstruction(op=<UOps.CONST: 5>, out=%f0, vin=[], arg=0)
+movl $0x00000000, -108(%rbp)
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%i8, vin=[%i2, -1], arg=<BinaryOps.MUL: 3>)
+movl -60(%rbp), %eax
+movl $-1, %ebx
+mull %ebx
+movl %eax, -84(%rbp)
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%p0, vin=[%i8, 0], arg=<BinaryOps.CMPLT: 9>)
+movl -84(%rbp), %eax
+movl $0, %ebx
+cmpl %ebx, %eax
+setae %al
+movl %eax, -109(%rbp)
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%p1, vin=[%i2, 4], arg=<BinaryOps.CMPLT: 9>)
+movl -60(%rbp), %eax
+movl $4, %ebx
+cmpl %ebx, %eax
+setae %al
+movl %eax, -110(%rbp)
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%p2, vin=[%p0, %p1], arg=<BinaryOps.MUL: 3>)
+movb -109(%rbp), %eax
+movb -110(%rbp), %ebx
+mulb %ebx
+movb %eax, -111(%rbp)
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%i9, vin=[%i1, -1], arg=<BinaryOps.MUL: 3>)
+movl -56(%rbp), %eax
+movl $-1, %ebx
+mull %ebx
+movl %eax, -88(%rbp)
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%p3, vin=[%i9, -2], arg=<BinaryOps.CMPLT: 9>)
+movl -88(%rbp), %eax
+movl $-2, %ebx
+cmpl %ebx, %eax
+setae %al
+movl %eax, -112(%rbp)
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%p4, vin=[%p2, %p3], arg=<BinaryOps.MUL: 3>)
+movb -111(%rbp), %eax
+movb -112(%rbp), %ebx
+mulb %ebx
+movb %eax, -113(%rbp)
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%p5, vin=[%i1, 6], arg=<BinaryOps.CMPLT: 9>)
+movl -56(%rbp), %eax
+movl $6, %ebx
+cmpl %ebx, %eax
+setae %al
+movl %eax, -114(%rbp)
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%p6, vin=[%p4, %p5], arg=<BinaryOps.MUL: 3>)
+movb -113(%rbp), %eax
+movb -114(%rbp), %ebx
+mulb %ebx
+movb %eax, -115(%rbp)
+# AssemblyInstruction(op=<UOps.COND_BRANCH: 12>, out=None, vin=[%p6], arg=('$skipload_0', False))
+movb -115(%rbp), %al
+test %al, %al
+jne .skipload_0
+# AssemblyInstruction(op=<UOps.LOAD: 3>, out=%f0, vin=[%A3], arg=(-40, 'global'))
+movq -32(%rbp), %rbx
+movl -40(%rbx), %eax
+movl %eax, -108(%rbp)
+# AssemblyInstruction(op=<UOps.LABEL: 11>, out=None, vin=[], arg='$skipload_0')
+.skipload_0:
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%i10, vin=[%i0, 240], arg=<BinaryOps.MUL: 3>)
+movl -52(%rbp), %eax
+movl $240, %ebx
+mull %ebx
+movl %eax, -92(%rbp)
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%i11, vin=[%i1, 24], arg=<BinaryOps.MUL: 3>)
+movl -56(%rbp), %eax
+movl $24, %ebx
+mull %ebx
+movl %eax, -96(%rbp)
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%i12, vin=[%i10, %i11], arg=<BinaryOps.ADD: 1>)
+movl -92(%rbp), %eax
+movl -96(%rbp), %ebx
+addl %ebx, %eax
+movl %eax, -100(%rbp)
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%i13, vin=[%i12, %i6], arg=<BinaryOps.ADD: 1>)
+movl -100(%rbp), %eax
+movl -76(%rbp), %ebx
+addl %ebx, %eax
+movl %eax, -104(%rbp)
+# AssemblyInstruction(op=<UOps.CAST: 8>, out=%A4, vin=[%i13], arg=None)
+movslq -104(%rbp), %rax
+movq %rax, -40(%rbp)
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%A5, vin=[%A4, %A0], arg=<BinaryOps.ADD: 1>)
+movq -40(%rbp), %rax
+movq -8(%rbp), %rbx
+addq %rbx, %rax
+movq %rax, -48(%rbp)
+# AssemblyInstruction(op=<UOps.STORE: 7>, out=None, vin=[%A5, %f0], arg=(0, 'global'))
+movl -108(%rbp), %eax
+movq -48(%rbp), %rbx
+movl %eax, 0(%rbx)
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%p7, vin=[%i2, 5], arg=<BinaryOps.CMPLT: 9>)
+movl -60(%rbp), %eax
+movl $5, %ebx
+cmpl %ebx, %eax
+setae %al
+movl %eax, -116(%rbp)
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%i2, vin=[%i2, 1], arg=<BinaryOps.ADD: 1>)
+movl -60(%rbp), %eax
+movl $1, %ebx
+addl %ebx, %eax
+movl %eax, -60(%rbp)
+# AssemblyInstruction(op=<UOps.COND_BRANCH: 12>, out=None, vin=[%p7], arg=('$loop_gidx2', True))
+movb -116(%rbp), %al
+test %al, %al
+je .loop_gidx2
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%p8, vin=[%i1, 9], arg=<BinaryOps.CMPLT: 9>)
+movl -56(%rbp), %eax
+movl $9, %ebx
+cmpl %ebx, %eax
+setae %al
+movl %eax, -117(%rbp)
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%i1, vin=[%i1, 1], arg=<BinaryOps.ADD: 1>)
+movl -56(%rbp), %eax
+movl $1, %ebx
+addl %ebx, %eax
+movl %eax, -56(%rbp)
+# AssemblyInstruction(op=<UOps.COND_BRANCH: 12>, out=None, vin=[%p8], arg=('$loop_gidx1', True))
+movb -117(%rbp), %al
+test %al, %al
+je .loop_gidx1
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%p9, vin=[%i0, 8], arg=<BinaryOps.CMPLT: 9>)
+movl -52(%rbp), %eax
+movl $8, %ebx
+cmpl %ebx, %eax
+setae %al
+movl %eax, -118(%rbp)
+# AssemblyInstruction(op=<UOps.ALU: 4>, out=%i0, vin=[%i0, 1], arg=<BinaryOps.ADD: 1>)
+movl -52(%rbp), %eax
+movl $1, %ebx
+addl %ebx, %eax
+movl %eax, -52(%rbp)
+# AssemblyInstruction(op=<UOps.COND_BRANCH: 12>, out=None, vin=[%p9], arg=('$loop_gidx0', True))
+movb -118(%rbp), %al
+test %al, %al
+je .loop_gidx0
+leave
+ret

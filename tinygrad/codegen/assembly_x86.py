@@ -41,7 +41,7 @@ class X86Codegen(AssemblyCodegen):
             raise Exception()
           # TODO pop remaining args from stack
       elif uop == UOps.ALU:
-        if dtypes.is_float(out.dtype) or dtypes.is_float(vin[0].dtype):      
+        if dtypes.is_float(vin[0].dtype):      
           ins.append(f"movd {reg_map[vin[0].nm]}, %xmm0")
           if arg not in [UnaryOps.SIN, UnaryOps.LOG2, UnaryOps.EXP2]: 
             ins.append(f"{alu_fp[arg]}ss {reg_map[vin[1].nm]}, %xmm0")
@@ -50,7 +50,9 @@ class X86Codegen(AssemblyCodegen):
           if arg in [BinaryOps.CMPLT, BinaryOps.CMPEQ]:
               cmp_map = {BinaryOps.CMPLT: "setae", BinaryOps.CMPEQ: "sete"}
               ins.append(f"{cmp_map[arg]} %al")
-          ins.append(f"movd %xmm0, {reg_map[out.nm]}")
+              ins.append(f"{inst('mov', out)} %al, {reg_map[out.nm]}")
+          else:
+            ins.append(f"movd %xmm0, {reg_map[out.nm]}")
           # TODO non fp add stuff
         else:
           reg_a, reg_b = reg('a', vin[0]), reg('b', vin[0])
@@ -66,7 +68,8 @@ class X86Codegen(AssemblyCodegen):
             ins.append(f"{inst(alu[arg], vin[0])} {reg_b}, {reg_a}")
             if arg in [BinaryOps.CMPLT, BinaryOps.CMPEQ]: 
               cmp_map = {BinaryOps.CMPLT: "setae", BinaryOps.CMPEQ: "sete"}
-              ins.append(f"{cmp_map[arg]} %al")
+              # TODO why is this save not needed?
+              # ins.append(f"{cmp_map[arg]} %al")
           ins.append(f"{inst('mov', vin[0])} {reg_a}, {reg_map[out.nm]}")
       elif uop == UOps.LOAD:
         # TODO can we use the shortform for indirect memory access?
