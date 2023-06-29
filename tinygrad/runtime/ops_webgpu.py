@@ -38,6 +38,8 @@ code_for_op: Dict[Op, Callable] = {
   FusedOps.MULACC: lambda x,y,z: f"(({x}*{y})+{z})",
 }
 
+def upcast_type(types) -> str: return type_map[max([x.dtype for x in types])] 
+
 class WebGpuCodegen(Linearizer):
   supports_float4 = False
   supports_constant_folding = True
@@ -97,8 +99,9 @@ class WebGpuCodegen(Linearizer):
         else: kk(f"var {newvar.render()} = select(0.0f, {val}, bool({args.valid.render(render_cl)}));")
       elif uop == UOps.ALU:
         assert newvar is not None
-        if newvar in vin: kk(f"{newvar.render()} = {code_for_op[args](*[x.render() for x in vin])};")
-        else: kk(f"let {newvar.render()} = {code_for_op[args](*[x.render() for x in vin])};")
+        vars = [f"{upcast_type(vin)}({x.render()})" for x in vin] if any([x.dtype != vin[0].dtype for x in vin]) else [x.render() for x in vin]
+        if newvar in vin: kk(f"{newvar.render()} = {code_for_op[args](*vars)};")
+        else: kk(f"let {newvar.render()} = {code_for_op[args](*vars)};")
       elif uop == UOps.STORE:
         val = vin[0].render()
         if vin[0].dtype != self.bufs[args.i].dtype:
@@ -110,6 +113,8 @@ class WebGpuCodegen(Linearizer):
       elif uop == UOps.BARRIER: kk("workgroupBarrier();")
       else: raise RuntimeError(f"failed to render {uop}")
     # Function name itself isn't unique
+    assert all(x <= 65535 for x in global_size), "WEBGPU max global size is 65535 in any dimension"
+    assert len([x for x in self.bufs if not isinstance(x, LocalBuffer) and not isinstance(x.realized, RawConst)]) <= 31, "WEBGPU max number of buffers is 31" 
     function_name = f"{self.function_name}_{abs(hash(self.key))}"
     bind_it = iter(range(len(self.bufs)))
     prg = "\n".join([f"@group(0) @binding({next(bind_it)}) var<storage,read_write> data{i}: array<{type_map[x.dtype]}>;" for i,x in enumerate(self.bufs) if not isinstance(x, LocalBuffer) and not isinstance(x.realized, RawConst)])
@@ -117,7 +122,8 @@ class WebGpuCodegen(Linearizer):
     return ASTRunner(function_name, prg, global_size[::-1] if len(global_size) else [1], local_size[::-1] if len(local_size) else [1])
 
 class RawWebGPUBuffer(RawBufferCopyIn):
-  def __init__(self, size, dtype): 
+ def __init__(self, size:int, dtype:DType):
+    assert dtype not in [dtypes.int8,dtypes.uint8,dtypes.int64,dtypes.uint64,dtypes.float64], f"dtype {dtype} not supported on WEBGPU"
     super().__init__(size, dtype, device.create_buffer(size=size*dtype.itemsize, usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST | wgpu.BufferUsage.COPY_SRC))
   def _copyin(self, x:np.ndarray): device.queue.write_buffer(self._buf, 0, np.ascontiguousarray(x))
   def toCPU(self) -> np.ndarray: return np.frombuffer(device.queue.read_buffer(self._buf, 0), dtype=np.dtype(self.dtype.np, metadata={"backing": self}))
