@@ -1,7 +1,7 @@
 import pathlib
 import unittest
 import numpy as np
-from tinygrad.tensor import Tensor
+from tinygrad.tensor import Tensor, Device
 from tinygrad.state import safe_load, safe_save, get_state_dict
 from tinygrad.helpers import dtypes
 from tinygrad.runtime.ops_disk import RawDiskBuffer
@@ -47,7 +47,7 @@ class TestRawDiskBuffer(unittest.TestCase):
     tst = np.empty(test_size, np.uint8)
     with Timing("copy in ", lambda et_ns: f" {test_size/et_ns:.2f} GB/s"):
       np.copyto(tst, db.toCPU())
-
+@unittest.skipIf(Device.DEFAULT == "WEBGPU", "webgpu doesn't support uint8 datatype")
 class TestSafetensors(unittest.TestCase):
   def test_real_safetensors(self):
     import torch
