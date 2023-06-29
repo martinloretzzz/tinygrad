@@ -1,3 +1,4 @@
+import numpy as np
 from wgpu.utils._device import get_default_device
 from tinygrad.runtime.lib import RawBufferMapped, RawConst
 from tinygrad.codegen.linearizer import Linearizer, LocalBuffer, UOps
@@ -39,6 +40,8 @@ code_for_op: Dict[Op, Callable] = {
 
 class WebGpuCodegen(Linearizer):
   supports_float4 = False
+  supports_constant_folding = True
+  def float_const(self, x: float) -> str: return f"{x}f" if not math.isinf(x) else ("-" if x < 0 else "") + "0x1.fffffep+127f"
 
   def codegen(self):
     self.process()
@@ -86,10 +89,11 @@ class WebGpuCodegen(Linearizer):
       elif uop == UOps.LOAD and newvar is not None:
         if self.bufs[args.i] is not None and isinstance(self.bufs[args.i].realized, RawConst):
           assert newvar.dtype == dtypes.float, "only floats"
-          print("LOADING RAW CONST", self.bufs[args.i], newvar)
+          val = self.float_const(self.bufs[args.i].realized._buf)
         else:
           val = f"{bufnames[args.i]}[{args.idx.render(render_cl)}]"
         if args.valid.min == 1: kk(f"let {newvar.render()} = {val};")
+        elif args.valid.render(render_cl) == "0": kk(f"var {newvar.render()} = 0.0f;")
         else: kk(f"var {newvar.render()} = select(0.0f, {val}, bool({args.valid.render(render_cl)}));")
       elif uop == UOps.ALU:
         assert newvar is not None
@@ -101,21 +105,22 @@ class WebGpuCodegen(Linearizer):
           val = f"{type_map[self.bufs[args.i].dtype]}({val})"
         kk(f"{bufnames[args.i]}[{args.idx.render(render_cl)}] = {val};")
       elif uop == UOps.CONST:
-        assert newvar is not None
-        if args == -math.inf: kk(f"var {newvar.render()} = 1.17549435082228750797e-38f;")
-        else: kk(f"var {newvar.render()} = {args};")
+        kk(f"var {newvar.render()} = {self.float_const(args)};")
       elif uop == UOps.DEFINE_LOCAL: kk(f"var {args[0]} = array<f32,{args[1]}>();")
       elif uop == UOps.BARRIER: kk("workgroupBarrier();")
       else: raise RuntimeError(f"failed to render {uop}")
-    prg = "\n".join([f"@group(0) @binding({i}) var<storage,read_write> data{i}: array<{type_map[x.dtype]}>;" for i,x in enumerate(self.bufs) if not isinstance(x, LocalBuffer) and not isinstance(x.realized, RawConst)])
-    prg += f"\n@compute @workgroup_size(1) fn {self.function_name}(@builtin(global_invocation_id) gindex: vec3<u32>, @builtin(local_invocation_id) lindex: vec3<u32>) {{\n" + "\n".join(kernel) + "\n}" # TODO: revert local_size {','.join([str(x) for x in local_size])} once bug is fixed
-    return ASTRunner(self.function_name, prg, global_size[::-1] if len(global_size) else [1], local_size[::-1] if len(local_size) else [1])
-  
+    # Function name itself isn't unique
+    function_name = f"{self.function_name}_{abs(hash(self.key))}"
+    bind_it = iter(range(len(self.bufs)))
+    prg = "\n".join([f"@group(0) @binding({next(bind_it)}) var<storage,read_write> data{i}: array<{type_map[x.dtype]}>;" for i,x in enumerate(self.bufs) if not isinstance(x, LocalBuffer) and not isinstance(x.realized, RawConst)])
+    prg += f"\n@compute @workgroup_size(1) fn {function_name}(@builtin(global_invocation_id) gindex: vec3<u32>, @builtin(local_invocation_id) lindex: vec3<u32>) {{\n" + "\n".join(kernel) + "\n}" # TODO: revert local_size {','.join([str(x) for x in local_size])} once bug is fixed
+    return ASTRunner(function_name, prg, global_size[::-1] if len(global_size) else [1], local_size[::-1] if len(local_size) else [1])
+
 class RawWebGPUBuffer(RawBufferMapped):
   def __init__(self, size:int, dtype:DType):
     assert dtype not in [dtypes.int8,dtypes.uint8,dtypes.int64,dtypes.uint64,dtypes.float64], f"dtype {dtype} not supported on WEBGPU"
     super().__init__(size, dtype, device.create_buffer(size=size*dtype.itemsize, usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST | wgpu.BufferUsage.COPY_SRC))
-  def _copyin(self, x) -> None: device.queue.write_buffer(self._buf, 0, x)
+  def _copyin(self, x) -> None: device.queue.write_buffer(self._buf, 0, np.ascontiguousarray(x))
   def _buffer(self) -> memoryview: return device.queue.read_buffer(self._buf, 0)
 
 WebGpuBuffer = Compiled(RawWebGPUBuffer, WebGpuCodegen, WebGPUProgram)
