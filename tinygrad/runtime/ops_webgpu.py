@@ -2,13 +2,13 @@ import numpy as np
 from wgpu.utils._device import get_default_device
 from tinygrad.runtime.lib import RawBufferCopyIn, RawConst
 from tinygrad.codegen.linearizer import Linearizer, LocalBuffer, UOps
-from tinygrad.helpers import DType, dtypes
+from tinygrad.helpers import dtypes, DType
 from tinygrad.ops import Compiled, UnaryOps, Op, BinaryOps, ASTRunner, FusedOps
 from tinygrad.shape.symbolic import NumNode, Variable
 from tinygrad.codegen.cstyle import render_cl
+from typing import Dict, Callable, List
 import math
 import wgpu
-from typing import Dict, Callable
 
 device = get_default_device()
 
@@ -56,7 +56,8 @@ class WebGpuCodegen(Linearizer):
     def kk(s): kernel.append(" "*depth+s)
     bufnames = ["temp" if isinstance(b, LocalBuffer) else f"data{i}" for i,b in enumerate(self.bufs)]
     depth += 1
-    gid,lid = [f"gindex.{'xyz'[x]}" for x in range(3)],[]
+    gid = [f"gindex.{'xyz'[x]}" for x in range(3)]
+    lid: List[str] = []
     pend_close = None
     for uop,newvar,vin,args in self.uops:
       if uop == UOps.LOOP:
@@ -94,20 +95,20 @@ class WebGpuCodegen(Linearizer):
           val = self.float_const(self.bufs[args.i].realized._buf)
         else:
           val = f"{bufnames[args.i]}[{args.idx.render(render_cl)}]"
-        if args.valid.min == 1: kk(f"let {newvar.render()} = {val};")
+        if args.valid.min == 1: kk(f"let {newvar.render()} = f32({val});")
         elif args.valid.render(render_cl) == "0": kk(f"var {newvar.render()} = 0.0f;")
-        else: kk(f"var {newvar.render()} = select(0.0f, {val}, bool({args.valid.render(render_cl)}));")
+        else: kk(f"var {newvar.render()} = select(0.0f, f32({val}), bool({args.valid.render(render_cl)}));")
       elif uop == UOps.ALU:
         assert newvar is not None
-        vars = [f"{upcast_type(vin)}({x.render()})" for x in vin] if any([x.dtype != vin[0].dtype for x in vin]) else [x.render() for x in vin]
-        if newvar in vin: kk(f"{newvar.render()} = {code_for_op[args](*vars)};")
-        else: kk(f"let {newvar.render()} = {code_for_op[args](*vars)};")
+        if newvar in vin: kk(f"{newvar.render()} = {code_for_op[args](*[x.render() for x in vin])};")
+        else: kk(f"let {newvar.render()} = {code_for_op[args](*[x.render() for x in vin])};")
       elif uop == UOps.STORE:
         val = vin[0].render()
         if vin[0].dtype != self.bufs[args.i].dtype:
           val = f"{type_map[self.bufs[args.i].dtype]}({val})"
         kk(f"{bufnames[args.i]}[{args.idx.render(render_cl)}] = {val};")
       elif uop == UOps.CONST:
+        assert newvar is not None
         kk(f"var {newvar.render()} = {self.float_const(args)};")
       elif uop == UOps.DEFINE_LOCAL: kk(f"var {args[0]} = array<f32,{args[1]}>();")
       elif uop == UOps.BARRIER: kk("workgroupBarrier();")
@@ -125,6 +126,7 @@ class RawWebGPUBuffer(RawBufferCopyIn):
   def __init__(self, size:int, dtype:DType):
     assert dtype not in [dtypes.int8,dtypes.uint8,dtypes.int64,dtypes.uint64,dtypes.float64], f"dtype {dtype} not supported on WEBGPU"
     super().__init__(size, dtype, device.create_buffer(size=size*dtype.itemsize, usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST | wgpu.BufferUsage.COPY_SRC))
+  def __del__(self): self._buf.destroy()
   def _copyin(self, x:np.ndarray): device.queue.write_buffer(self._buf, 0, np.ascontiguousarray(x))
   def toCPU(self) -> np.ndarray: return np.frombuffer(device.queue.read_buffer(self._buf, 0), dtype=np.dtype(self.dtype.np, metadata={"backing": self}))
 
