@@ -4,13 +4,8 @@ from tinygrad.jit import TinyJit
 from extra.utils import fetch
 import ast
 
-def compile_net(run, special_names, statement_builder = lambda name, cargs, global_size: f"{name}({', '.join(cargs)});"):
-  # functions that run the net
-  functions = {}
-  bufs = {}
-  bufnum = 0
-  statements = []
-  bufs_to_save = {}
+def compile_net(run, special_names):
+  functions, bufs, bufs_to_save, statements, bufnum = {}, {}, {}, [], 0
   for fxn,args in run.jit_cache:
     functions[fxn.name] = fxn.prg   # NOTE: this assumes all with the same name are the same
     cargs = []
@@ -18,26 +13,21 @@ def compile_net(run, special_names, statement_builder = lambda name, cargs, glob
       key = id(arg)
       if key not in bufs:
         if key in special_names:
-          bufs[key] = (special_names[key], len(arg._buf))
+          bufs[key] = (special_names[key], arg._memsz, key)
         else:
-          bufs[key] = (f"buf_{bufnum}", len(arg._buf))
+          bufs[key] = (f"buf_{bufnum}", arg._memsz, key)
           bufnum += 1
           if i > 0: bufs_to_save[bufs[key][0]] = arg   # if first usage of a buffer is not an output, and it's not a special name
       cargs.append(bufs[key][0])
-    statements.append(statement_builder(fxn.name, cargs, fxn.global_size))
+    statements.append((fxn.name, cargs, fxn.global_size))
 
   return functions, statements, bufs, bufs_to_save
 
-
-def jit_efficientnet():
-  model = EfficientNet(0)
-  model.load_from_pretrained()
-
+def jit_model(model, the_input):
   @TinyJit
   def run(x): return model.forward(x).realize()
 
   # twice to run the JIT
-  the_input = Tensor.randn(1,3,224,224)
   the_output = run(the_input)
   the_output = run(the_input)
 
@@ -51,7 +41,9 @@ def jit_efficientnet():
   return run, special_names
 
 if __name__ == "__main__":
-  run, special_names = jit_efficientnet()
+  model = EfficientNet(0)
+  model.load_from_pretrained()
+  run, special_names = jit_model(model, Tensor.randn(1,3,224,224))
   functions, statements, bufs, bufs_to_save = compile_net(run, special_names)
 
   # c header
@@ -72,13 +64,13 @@ if __name__ == "__main__":
   cprog.append(f"char *lbls[] = {{{','.join(lbls)}}};")
 
   # buffers (empty + weights)
-  cprog += [f"float {name}[{len}];" if name not in bufs_to_save else f"float *{name} = (float *){name}_data;" for name,len in bufs.values()]
+  cprog += [f"float {name}[{len}];" if name not in bufs_to_save else f"float *{name} = (float *){name}_data;" for name,len,_key in bufs.values()]
 
   # the functions
   cprog += list(functions.values())
 
-  # the net
-  cprog += ["void net() {"] + statements + ["}"]
+  # the net 
+  cprog += ["void net() {"] + [f"{name}({', '.join(args)});" for (name, args, _global_size) in statements] + ["}"]
 
   cprog += ["""
 int main(int argc, char* argv[]) {
