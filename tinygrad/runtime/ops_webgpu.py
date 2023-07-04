@@ -57,7 +57,7 @@ class WebGpuCodegen(Linearizer):
     bufnames = ["temp" if isinstance(b, LocalBuffer) else f"data{i}" for i,b in enumerate(self.bufs)]
     depth += 1
     gid = [f"gindex.{'xyz'[x]}" for x in range(3)]
-    lid: List[str] = [] if not LOCAL_GROUPS else [f"lindex.{'xyz'[x]}*local_index.{'xyz'[x]}" for x in range(3)]
+    lid: List[str] = [] if not LOCAL_GROUPS else [f"lindex.{'xyz'[x]}" for x in range(3)]
     pend_close = None
     for uop,newvar,vin,args in self.uops:
       if uop == UOps.LOOP:
